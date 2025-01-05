@@ -1,0 +1,202 @@
+---
+title: "DS Flexdash One Plot One Table"
+author: "Dan Swart"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+runtime: shiny
+---
+
+
+```{r global, include=FALSE}
+
+# Load libraries
+library(flexdashboard)
+library(shiny)
+library(dplyr, warn.conflicts = FALSE)
+library(ggplot2)
+library(vroom)
+
+# Load the sales data
+sales <- vroom::vroom("sales_data_sample.csv", col_types = list(), na = "")
+
+# Prepare diamonds dataset
+dataset <- diamonds
+
+# Arrange sales data for initial exploration
+sales <- sales %>%
+  select(TERRITORY, CUSTOMERNAME, ORDERNUMBER, everything()) %>%
+  arrange(ORDERNUMBER)
+
+```
+
+Inputs {.sidebar data-width=350}
+-----------------------------------------------------------------------
+
+### Sales Data Inputs
+
+```{r}
+
+# Territory selection
+selectInput("territory",
+            "Territory",
+            choices = unique(sales$TERRITORY),
+            selected = "Japan"
+            )
+
+# Customer name selection (choices updated dynamically)
+selectInput("customername",
+            "Customer", 
+            choices = NULL
+            )
+
+# Order number selection (choices updated dynamically)
+selectInput("ordernumber", 
+            "Order number",
+            choices = NULL
+            )
+
+```
+
+<br>
+<br>
+
+### Diamonds Explorer Inputs
+
+```{r}
+
+sliderInput("sampleSize",
+            "Sample Size", 
+            min = 1,
+            max = nrow(dataset), 
+            value = min(1000, 
+                        nrow(dataset)
+                        ),
+            step = 500,
+            round = 0
+            )
+
+checkboxInput("jitter", "Jitter", value = TRUE)
+
+checkboxInput("smooth", "Smooth", value = TRUE)
+
+selectInput("x", 
+            "X",
+            names(dataset),
+            selected = "carat"
+            )
+
+selectInput("y",
+            "Y", 
+            names(dataset), 
+            selected = "price"
+            )
+
+selectInput("color", "Color", c("None", names(dataset)))
+
+selectInput('facet_row', 'Facet Row',
+            c(None='.', names(diamonds[sapply(diamonds, is.factor)])))
+
+selectInput('facet_col', 'Facet Column',
+            c(None='.', names(diamonds[sapply(diamonds, is.factor)])))
+
+```
+
+
+Outputs {data-width=600}
+-----------------------------------------------------------------------
+
+### Sales Data Table
+
+```{r}
+
+tableOutput("data")
+
+```
+<br>
+<br>
+
+### Diamonds Explorer Plot
+
+```{r}
+
+plotOutput("diamonds_plot")
+
+```
+
+
+Server Logic {.hidden}
+-----------------------------------------------------------------------
+
+### Sales Data Logic
+
+```{r}
+
+# Reactive for rows matching the selected territory
+territory <- reactive({
+  req(input$territory)
+  filter(sales, TERRITORY == input$territory)
+})
+
+# Update customer name choices based on selected territory
+observeEvent(territory(), {
+  freezeReactiveValue(input, "customername")
+  choices <- unique(territory()$CUSTOMERNAME)
+  updateSelectInput(session, inputId = "customername", choices = choices)
+})
+
+# Reactive for rows matching the selected customer
+customer <- reactive({
+  req(input$customername)
+  filter(territory(), CUSTOMERNAME == input$customername)
+})
+
+# Update order number choices based on selected customer
+observeEvent(customer(), {
+  freezeReactiveValue(input, "ordernumber")
+  choices <- unique(customer()$ORDERNUMBER)
+  updateSelectInput(session, inputId = "ordernumber", choices = choices)
+})
+
+# Render the selected orders in a table
+output$data <- renderTable({
+  req(input$ordernumber)
+  customer() %>%
+    filter(ORDERNUMBER == input$ordernumber) %>%
+    select(PRODUCTCODE, QUANTITYORDERED, PRICEEACH)
+})
+
+```
+
+### Diamonds Explorer Logic
+
+```{r}
+
+# Reactive dataset for diamonds
+dataset <- reactive({
+  diamonds[sample(nrow(diamonds), input$sampleSize), ]
+})
+
+# Render plot for Diamonds Explorer
+output$diamonds_plot <- renderPlot({
+  p <- ggplot(dataset(), aes_string(x = input$x, y = input$y)) + geom_point()
+  
+  if (input$color != "None")
+    p <- p + aes_string(color = input$color)
+  
+  facets <- paste(input$facet_row, "~", input$facet_col)
+  if (facets != ". ~ .")
+    p <- p + facet_grid(facets)
+  
+  if (input$jitter)
+    p <- p + geom_jitter()
+  if (input$smooth)
+    p <- p + geom_smooth()
+  
+  print(p)
+})
+
+```
+
+
