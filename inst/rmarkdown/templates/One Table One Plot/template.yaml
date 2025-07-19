@@ -1,0 +1,4 @@
+name: DS Flexdash One Plot One Table
+description: >
+   DS Version of Flexdashboard with One Plot Panel, One Table Panel
+create_dir: FALSE
